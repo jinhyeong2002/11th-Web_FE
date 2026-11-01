@@ -1,20 +1,12 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useState, type SubmitEvent } from "react";
-import type { TmdbMovieListItem } from "../../api/movies/models";
-import { searchMovies } from "../../api/movies/search-movies";
+import { useQuery } from "@tanstack/react-query";
+import { useState, type SubmitEvent } from "react";
+import { movieSearchQueryOptions } from "../../api/movies/movie-query-options";
 import { BookmarkButton } from "../../components/bookmark-button";
 import { MovieSortControl } from "../../components/movies/movie-sort-control";
 import { Pagination } from "../../components/movies/pagination";
 import { useMoviePreferenceStore } from "../../stores/movie-preference-store";
 import { getTmdbPosterUrl } from "../../utils/movies/tmdb-image";
-
-interface SearchResult {
-  key: string;
-  movies: TmdbMovieListItem[];
-  totalPages: number;
-  totalResults: number;
-  errorMessage: string | null;
-}
 
 function SearchForm({ query }: { query: string }) {
   const navigate = useNavigate({ from: "/search" });
@@ -58,51 +50,12 @@ function SearchForm({ query }: { query: string }) {
 export function SearchPage() {
   const { query = "", page = 1 } = useSearch({ from: "/search" });
   const navigate = useNavigate({ from: "/search" });
-  const [result, setResult] = useState<SearchResult | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   const sortOrder = useMoviePreferenceStore((state) => state.sortOrder);
   const normalizedQuery = query.trim();
-  const requestKey = JSON.stringify([normalizedQuery, page, retryCount]);
-
-  useEffect(() => {
-    let ignore = false;
-
-    if (!normalizedQuery) return;
-
-    searchMovies({ query: normalizedQuery, page })
-      .then((response) => {
-        if (!ignore) {
-          setResult({
-            key: requestKey,
-            movies: response.results,
-            totalPages: Math.min(response.total_pages, 500),
-            totalResults: response.total_results,
-            errorMessage: null,
-          });
-        }
-      })
-      .catch(() => {
-        if (!ignore) {
-          setResult({
-            key: requestKey,
-            movies: [],
-            totalPages: 1,
-            totalResults: 0,
-            errorMessage: "검색 결과를 불러오지 못했어요.",
-          });
-        }
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, [normalizedQuery, page, requestKey]);
-
-  const isLoading = Boolean(normalizedQuery) && result?.key !== requestKey;
-  const movies = result?.key === requestKey ? result.movies : [];
-  const totalPages = result?.key === requestKey ? result.totalPages : 1;
-  const totalResults = result?.key === requestKey ? result.totalResults : 0;
-  const errorMessage = result?.key === requestKey ? result.errorMessage : null;
+  const searchQuery = useQuery(movieSearchQueryOptions(normalizedQuery, page));
+  const movies = searchQuery.data?.results ?? [];
+  const totalPages = Math.min(searchQuery.data?.total_pages ?? 0, 500);
+  const totalResults = searchQuery.data?.total_results ?? 0;
 
   const searchResults =
     sortOrder === "title"
@@ -133,27 +86,27 @@ export function SearchPage() {
           <h2 className="text-xl font-bold text-white">
             ‘{query}’ 검색 결과
           </h2>
-          {!isLoading && !errorMessage && (
+          {searchQuery.isSuccess && (
             <p className="mt-1 mb-5 text-sm text-[#969da8]">
               영화 {totalResults}편
             </p>
           )}
-          {isLoading ? (
+          {searchQuery.isLoading ? (
             <p className="my-12 text-center text-[#969da8]" role="status">
               검색 결과를 불러오는 중이에요.
             </p>
-          ) : errorMessage ? (
+          ) : searchQuery.isError ? (
             <div className="my-12 grid justify-items-center gap-4 text-[#969da8]" role="alert">
-              <p>{errorMessage}</p>
+              <p>검색 결과를 불러오지 못했어요.</p>
               <button
                 className="cursor-pointer rounded-lg border border-white/20 px-4 py-2 text-white hover:border-blue-500"
                 type="button"
-                onClick={() => setRetryCount((count) => count + 1)}
+                onClick={() => searchQuery.refetch()}
               >
                 다시 시도
               </button>
             </div>
-          ) : searchResults.length === 0 ? (
+          ) : searchQuery.isSuccess && searchResults.length === 0 ? (
             <p className="my-12 text-center text-[#969da8]">
               검색 결과가 없어요.
             </p>

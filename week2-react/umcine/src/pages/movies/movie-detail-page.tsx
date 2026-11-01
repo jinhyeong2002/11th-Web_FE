@@ -1,7 +1,6 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { getMovieDetail } from "../../api/movies/get-movie-detail";
-import type { TmdbMovieDetail } from "../../api/movies/models";
+import { useQuery } from "@tanstack/react-query";
+import { movieDetailQueryOptions } from "../../api/movies/movie-query-options";
 import { BookmarkButton } from "../../components/bookmark-button";
 import { getMovieDetailErrorMessage } from "../../utils/movies/get-movie-detail-error-message";
 import {
@@ -10,54 +9,26 @@ import {
 } from "../../utils/movies/tmdb-image";
 
 export function MovieDetailPage() {
-  const { movieId } = useParams({ from: "/movies/$movieId" });
-  const parsedMovieId = Number(movieId);
-  const isValidMovieId = Number.isInteger(parsedMovieId) && parsedMovieId > 0;
-  const [movie, setMovie] = useState<TmdbMovieDetail | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
+  const { movieId: movieIdParam } = useParams({ from: "/movies/$movieId" });
+  const movieId = Number(movieIdParam);
+  const isValidMovieId = Number.isInteger(movieId) && movieId > 0;
+  const movieDetailQuery = useQuery(movieDetailQueryOptions(movieId));
 
-  useEffect(() => {
-    if (!isValidMovieId) return;
-
-    let ignore = false;
-
-    async function loadMovie() {
-      setIsLoading(true);
-      setErrorMessage(null);
-      setMovie(null);
-
-      try {
-        const response = await getMovieDetail(parsedMovieId);
-        if (!ignore) setMovie(response);
-      } catch (error) {
-        if (!ignore) setErrorMessage(getMovieDetailErrorMessage(error));
-      } finally {
-        if (!ignore) setIsLoading(false);
-      }
-    }
-
-    loadMovie();
-
-    return () => {
-      ignore = true;
-    };
-  }, [isValidMovieId, parsedMovieId, retryCount]);
-
-  if (!isValidMovieId || isLoading || errorMessage || !movie || movie.id !== parsedMovieId) {
+  if (!isValidMovieId || movieDetailQuery.isPending || movieDetailQuery.isError) {
     const message = !isValidMovieId
       ? "올바르지 않은 영화 번호예요."
-      : errorMessage || "영화 정보를 불러오는 중이에요.";
+      : movieDetailQuery.isError
+        ? getMovieDetailErrorMessage(movieDetailQuery.error)
+        : "영화 정보를 불러오는 중이에요.";
 
     return (
       <main className="grid min-h-[calc(100vh-72px)] place-content-center gap-4 px-5 text-center text-[#969da8]">
-        <p role={errorMessage || !isValidMovieId ? "alert" : "status"}>{message}</p>
-        {isValidMovieId && errorMessage && (
+        <p role={movieDetailQuery.isError || !isValidMovieId ? "alert" : "status"}>{message}</p>
+        {isValidMovieId && movieDetailQuery.isError && (
           <button
             className="cursor-pointer rounded-lg border border-white/20 px-4 py-2 text-white hover:border-blue-500"
             type="button"
-            onClick={() => setRetryCount((count) => count + 1)}
+            onClick={() => movieDetailQuery.refetch()}
           >
             다시 시도
           </button>
@@ -66,6 +37,7 @@ export function MovieDetailPage() {
     );
   }
 
+  const movie = movieDetailQuery.data;
   const backdropUrl = getTmdbBackdropUrl(movie.backdrop_path);
   const posterUrl = getTmdbPosterUrl(movie.poster_path);
 

@@ -1,7 +1,6 @@
 import { useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { getMovies } from "../../api/movies/get-movies";
-import type { TmdbMovieListItem } from "../../api/movies/models";
+import { useQuery } from "@tanstack/react-query";
+import { movieListQueryOptions } from "../../api/movies/movie-query-options";
 import { MovieGrid } from "../../components/movies/movie-grid";
 import { MovieSortControl } from "../../components/movies/movie-sort-control";
 import { Pagination } from "../../components/movies/pagination";
@@ -10,40 +9,15 @@ import { useMoviePreferenceStore } from "../../stores/movie-preference-store";
 export function MovieListPage() {
   const { page = 1 } = useSearch({ from: "/" });
   const navigate = useNavigate({ from: "/" });
-  const [movies, setMovies] = useState<TmdbMovieListItem[]>([]);
-  const [totalPages, setTotalPages] = useState(1);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [retryCount, setRetryCount] = useState(0);
   const sortOrder = useMoviePreferenceStore((state) => state.sortOrder);
 
-  useEffect(() => {
-    let ignore = false;
+  const moviesQuery = useQuery(movieListQueryOptions(page));
+  const movies = moviesQuery.data?.results ?? [];
+  const totalPages = Math.min(moviesQuery.data?.total_pages ?? 0, 500);
 
-    async function loadMovies() {
-      setIsLoading(true);
-      setErrorMessage(null);
-      setMovies([]);
-
-      try {
-        const response = await getMovies({ page });
-        if (!ignore) {
-          setMovies(response.results);
-          setTotalPages(Math.min(response.total_pages, 500));
-        }
-      } catch {
-        if (!ignore) setErrorMessage("영화 목록을 불러오지 못했어요.");
-      } finally {
-        if (!ignore) setIsLoading(false);
-      }
-    }
-
-    loadMovies();
-
-    return () => {
-      ignore = true;
-    };
-  }, [page, retryCount]);
+  const handlePageChange = (nextPage: number) => {
+    navigate({ search: { page: nextPage } });
+  };
 
   const visibleMovies =
     sortOrder === "title"
@@ -62,17 +36,17 @@ export function MovieListPage() {
           영화 목록
         </h1>
       </div>
-      {isLoading ? (
+      {moviesQuery.isPending ? (
         <p className="my-12 text-center text-[#969da8]" role="status">
           영화 목록을 불러오는 중이에요.
         </p>
-      ) : errorMessage ? (
+      ) : moviesQuery.isError ? (
         <div className="my-12 grid justify-items-center gap-4 text-[#969da8]" role="alert">
-          <p>{errorMessage}</p>
+          <p>영화 목록을 불러오지 못했어요.</p>
           <button
             className="cursor-pointer rounded-lg border border-white/20 px-4 py-2 text-white hover:border-blue-500"
             type="button"
-            onClick={() => setRetryCount((count) => count + 1)}
+            onClick={() => moviesQuery.refetch()}
           >
             다시 시도
           </button>
@@ -85,9 +59,7 @@ export function MovieListPage() {
             <Pagination
               currentPage={page}
               totalPages={totalPages}
-              onPageChange={(nextPage) =>
-                navigate({ search: { page: nextPage } })
-              }
+              onPageChange={handlePageChange}
             />
           )}
         </>
